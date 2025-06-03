@@ -333,6 +333,13 @@
                     <label for="pdfFolder">PDF Folder URL:</label>
                     <input type="text" id="pdfFolder" placeholder="https://your-username.github.io/your-repo/pdfs/">
                 </div>
+                <div class="config-row">
+                    <label for="pdfFiles">PDF Files (optional):</label>
+                    <input type="text" id="pdfFiles" placeholder="file1.pdf, file2.pdf, file3.pdf">
+                    <small style="color: #6c757d; font-size: 0.8rem; margin-top: 4px; display: block;">
+                        Leave blank to auto-discover, or list specific filenames separated by commas
+                    </small>
+                </div>
                 <button onclick="initializeBot()" style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 10px;">
                     Initialize Assistant
                 </button>
@@ -402,24 +409,72 @@
         async function initializeBot() {
             const provider = document.getElementById('aiProvider').value;
             const apiKey = document.getElementById('apiKey').value;
-            const pdfFolder = document.getElementById('pdfFolder').value;
+            let pdfFolder = document.getElementById('pdfFolder').value;
+            const customFiles = document.getElementById('pdfFiles').value;
 
+            // Validation
             if (!apiKey || !pdfFolder) {
-                alert('Please fill in all configuration fields');
+                alert('Please fill in API key and PDF folder URL');
                 return;
             }
 
-            config = { provider, apiKey, pdfFolderUrl: pdfFolder, isInitialized: true };
+            // Normalize PDF folder URL
+            if (!pdfFolder.endsWith('/')) {
+                pdfFolder += '/';
+            }
+            if (!pdfFolder.startsWith('http')) {
+                alert('PDF Folder URL must start with http:// or https://');
+                return;
+            }
+
+            // Parse custom file list
+            let customFileList = [];
+            if (customFiles.trim()) {
+                customFileList = customFiles.split(',')
+                    .map(file => file.trim())
+                    .filter(file => file.length > 0)
+                    .filter(file => file.toLowerCase().endsWith('.pdf'));
+                
+                if (customFileList.length === 0) {
+                    alert('Please enter valid PDF filenames (must end with .pdf)');
+                    return;
+                }
+            }
+
+            config = { 
+                provider, 
+                apiKey, 
+                pdfFolderUrl: pdfFolder, 
+                customFiles: customFileList,
+                isInitialized: false 
+            };
             
             updateStatus('Initializing...', false);
+            showLoadingProgress(0);
             
             try {
-                // Simulate document loading process
+                // Test API key first
+                updateStatus('Testing API connection...', false);
+                await testAPIConnection();
+                showLoadingProgress(20);
+                
+                // Test PDF folder access
+                updateStatus('Testing PDF folder access...', false);
+                await testPDFFolder();
+                showLoadingProgress(40);
+                
+                // Load documents
+                updateStatus('Loading documents...', false);
                 await loadDocuments();
+                showLoadingProgress(100);
+                
+                // Success!
+                config.isInitialized = true;
                 
                 // Hide config panel and show welcome
                 document.getElementById('configPanel').style.display = 'none';
                 document.getElementById('welcomeMessage').style.display = 'block';
+                hideLoadingProgress();
                 
                 // Enable input
                 document.getElementById('messageInput').disabled = false;
@@ -427,17 +482,115 @@
                 
                 updateStatus('Ready', true);
                 
+                // Show success message
+                addMessage(`🎉 Successfully loaded ${documentChunks.length} document chunks from your policy files! I'm ready to answer questions about your college policies.`, 'bot');
+                
                 // Focus on input
                 document.getElementById('messageInput').focus();
+                
             } catch (error) {
                 console.error('Initialization failed:', error);
                 updateStatus('Setup Required', false);
-                alert('Failed to initialize. Please check your configuration.');
+                hideLoadingProgress();
+                
+                // Show detailed error message
+                let errorMessage = 'Failed to initialize. ';
+                
+                if (error.message.includes('API')) {
+                    errorMessage += 'Please check your API key and try again.';
+                } else if (error.message.includes('PDF folder')) {
+                    errorMessage += 'Please check your PDF folder URL and ensure it\'s accessible.';
+                } else if (error.message.includes('No PDF files')) {
+                    errorMessage += 'No PDF files were found. Please check your configuration.';
+                } else {
+                    errorMessage += `Error: ${error.message}`;
+                }
+                
+                alert(errorMessage);
+                addMessage(`❌ Initialization failed: ${error.message}`, 'bot');
+            }
+        }
+
+        async function testAPIConnection() {
+            try {
+                if (config.provider === 'openai') {
+                    const response = await fetch('https://api.openai.com/v1/models', {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${config.apiKey}`
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        if (response.status === 401) {
+                            throw new Error('Invalid OpenAI API key');
+                        } else {
+                            throw new Error(`OpenAI API error: ${response.status}`);
+                        }
+                    }
+                } else {
+                    // Test Groq API
+                    const response = await fetch('https://api.groq.com/openai/v1/models', {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${config.apiKey}`
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        if (response.status === 401) {
+                            throw new Error('Invalid Groq API key');
+                        } else {
+                            throw new Error(`Groq API error: ${response.status}`);
+                        }
+                    }
+                }
+            } catch (error) {
+                if (error.message.includes('Failed to fetch')) {
+                    throw new Error('API connection failed - please check your internet connection');
+                }
+                throw error;
+            }
+        }
+
+        async function testPDFFolder() {
+            try {
+                // Test if we can access the PDF folder by trying to fetch a common file
+                const testResponse = await fetch(config.pdfFolderUrl, { method: 'HEAD' });
+                
+                // Even if the folder returns 404, that's okay - we just need to know we can reach the domain
+                // The real test is when we try to discover files
+                
+            } catch (error) {
+                throw new Error('PDF folder URL is not accessible - please check the URL');
+            }
+        }
+
+        function showLoadingProgress(percentage) {
+            let progressBar = document.getElementById('loadingProgress');
+            if (!progressBar) {
+                // Create progress bar
+                const progressContainer = document.createElement('div');
+                progressContainer.innerHTML = `
+                    <div class="loading-bar">
+                        <div class="loading-progress" id="loadingProgress" style="width: 0%"></div>
+                    </div>
+                `;
+                document.getElementById('configPanel').appendChild(progressContainer);
+                progressBar = document.getElementById('loadingProgress');
+            }
+            progressBar.style.width = percentage + '%';
+        }
+
+        function hideLoadingProgress() {
+            const progressBar = document.querySelector('.loading-bar');
+            if (progressBar) {
+                progressBar.remove();
             }
         }
 
         async function loadDocuments() {
-            updateStatus('Loading documents...', false);
+            updateStatus('Discovering PDF files...', false);
             
             try {
                 // Discover available PDF files
@@ -445,8 +598,11 @@
                 console.log(`Found ${availableFiles.length} PDF files to process`);
                 
                 if (availableFiles.length === 0) {
-                    throw new Error('No PDF files found in the specified folder');
+                    throw new Error('No PDF files found in the specified folder. Please check that your PDF folder URL is correct and contains PDF files.');
                 }
+                
+                // Show what we found
+                addMessage(`📁 Found ${availableFiles.length} PDF file(s): ${availableFiles.join(', ')}`, 'bot');
                 
                 // Process each PDF
                 documentChunks = [];
@@ -455,29 +611,41 @@
                 
                 for (let i = 0; i < availableFiles.length; i++) {
                     const fileName = availableFiles[i];
+                    const progress = Math.round(((i + 1) / availableFiles.length) * 80); // Reserve 20% for embeddings
+                    
                     updateStatus(`Processing ${fileName}... (${i + 1}/${availableFiles.length})`, false);
+                    showLoadingProgress(20 + progress);
                     
                     try {
                         const chunks = await processPDF(fileName);
                         documentChunks.push(...chunks);
                         console.log(`Processed ${fileName}: ${chunks.length} chunks`);
+                        addMessage(`✅ Processed ${fileName}: ${chunks.length} text segments`, 'bot');
                     } catch (error) {
                         console.error(`Failed to process ${fileName}:`, error);
+                        addMessage(`⚠️ Could not process ${fileName}: ${error.message}`, 'bot');
                         // Continue with other files
                     }
-                    
-                    loadingProgress = ((i + 1) / availableFiles.length) * 100;
                 }
                 
                 if (documentChunks.length === 0) {
-                    throw new Error('No content could be extracted from PDF files');
+                    throw new Error('No content could be extracted from PDF files. Please check that the PDF files are not password-protected or corrupted.');
                 }
                 
                 // Generate embeddings for all chunks
                 updateStatus('Generating embeddings...', false);
-                await generateAllEmbeddings();
+                showLoadingProgress(85);
                 
-                console.log(`Successfully loaded ${documentChunks.length} document chunks with embeddings`);
+                try {
+                    await generateAllEmbeddings();
+                    console.log(`Successfully generated embeddings for ${documentChunks.length} document chunks`);
+                } catch (error) {
+                    console.error('Embedding generation failed:', error);
+                    // For now, continue without embeddings - we'll fall back to keyword search
+                    addMessage(`⚠️ Embedding generation failed, using keyword search fallback`, 'bot');
+                }
+                
+                console.log(`Successfully loaded ${documentChunks.length} document chunks`);
                 
             } catch (error) {
                 console.error('Document loading failed:', error);
@@ -486,21 +654,103 @@
         }
 
         async function discoverPDFFiles() {
-            // Try to fetch a directory listing or check common files
+            // If custom files are specified, use those
+            if (config.customFiles && config.customFiles.length > 0) {
+                console.log(`Using custom file list: ${config.customFiles.join(', ')}`);
+                
+                const availableFiles = [];
+                
+                for (const fileName of config.customFiles) {
+                    try {
+                        const fileUrl = `${config.pdfFolderUrl}${fileName}`;
+                        console.log(`Testing custom file: ${fileUrl}`);
+                        
+                        const response = await fetch(fileUrl, { 
+                            method: 'HEAD',
+                            mode: 'cors'
+                        });
+                        
+                        if (response.ok) {
+                            availableFiles.push(fileName);
+                            console.log(`✓ Found: ${fileName}`);
+                        } else {
+                            console.log(`✗ Not found: ${fileName} (${response.status})`);
+                            throw new Error(`File not found: ${fileName}`);
+                        }
+                    } catch (error) {
+                        console.error(`Error checking ${fileName}:`, error);
+                        throw new Error(`Cannot access file: ${fileName}. Please check the filename and ensure it exists in your PDF folder.`);
+                    }
+                }
+                
+                return availableFiles;
+            }
+            
+            // Auto-discovery mode
+            console.log(`Auto-discovering files in: ${config.pdfFolderUrl}`);
             const availableFiles = [];
             
-            for (const fileName of commonPolicyFiles) {
+            // Try common policy file names
+            const testFiles = [...commonPolicyFiles];
+            
+            for (const fileName of testFiles) {
                 try {
-                    const response = await fetch(`${config.pdfFolderUrl}${fileName}`, { method: 'HEAD' });
+                    const fileUrl = `${config.pdfFolderUrl}${fileName}`;
+                    console.log(`Testing: ${fileUrl}`);
+                    
+                    const response = await fetch(fileUrl, { 
+                        method: 'HEAD',
+                        mode: 'cors'
+                    });
+                    
                     if (response.ok) {
                         availableFiles.push(fileName);
+                        console.log(`✓ Found: ${fileName}`);
                     }
                 } catch (error) {
-                    // File doesn't exist, continue
-                    console.log(`${fileName} not found, skipping`);
+                    // Continue silently for auto-discovery
+                }
+                
+                // Add small delay to avoid overwhelming the server
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            
+            // If no common files found, try alternative patterns
+            if (availableFiles.length === 0) {
+                console.log('No common policy files found. Trying alternative patterns...');
+                
+                const alternativePatterns = [
+                    'handbook.pdf',
+                    'policies.pdf',
+                    'student-policies.pdf',
+                    'employee-policies.pdf',
+                    'staff-policies.pdf',
+                    'manual.pdf',
+                    'guidelines.pdf',
+                    'procedures.pdf',
+                    'catalog.pdf',
+                    'code-of-conduct.pdf'
+                ];
+                
+                for (const fileName of alternativePatterns) {
+                    try {
+                        const fileUrl = `${config.pdfFolderUrl}${fileName}`;
+                        const response = await fetch(fileUrl, { 
+                            method: 'HEAD', 
+                            mode: 'cors' 
+                        });
+                        
+                        if (response.ok) {
+                            availableFiles.push(fileName);
+                            console.log(`✓ Found alternative file: ${fileName}`);
+                        }
+                    } catch (error) {
+                        // Continue silently
+                    }
                 }
             }
             
+            console.log(`Discovery complete. Found ${availableFiles.length} files:`, availableFiles);
             return availableFiles;
         }
 

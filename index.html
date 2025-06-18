@@ -322,15 +322,21 @@
                     </small>
                 </div>
                 <div class="config-row">
-                    <label for="pdfFolder">PDF Folder URL:</label>
-                    <input type="text" id="pdfFolder" placeholder="https://your-username.github.io/your-repo/pdf/">
-                </div>
-                <div class="config-row">
-                    <label for="pdfFiles">PDF Files (optional):</label>
-                    <input type="text" id="pdfFiles" placeholder="file1.pdf, file2.pdf, file3.pdf">
+                    <label for="baseUrl">Base URL:</label>
+                    <input type="text" id="baseUrl" placeholder="https://mcgoldrm.github.io/mc_pp" value="https://mcgoldrm.github.io/mc_pp">
                     <small style="color: #6c757d; font-size: 0.8rem; margin-top: 4px; display: block;">
-                        Leave blank to auto-discover, or list specific filenames separated by commas
+                        Your GitHub Pages base URL (PDF folder will be automatically added)
                     </small>
+                </div>
+                <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin: 10px 0; font-size: 0.9rem; color: #495057;">
+                    📚 <strong>Configured Files:</strong><br>
+                    • Chapter I - Board of Trustees<br>
+                    • Chapter II - Organization<br>
+                    • Chapter III - Personnel<br>
+                    • Chapter IV - Student Affairs<br>
+                    • Chapter V - Educational Program<br>
+                    • Chapter VI - Fiscal and Administrative Affairs<br>
+                    • Chapter VII - Facilities
                 </div>
                 <button onclick="initializeBot()" style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; width: 100%; margin-top: 10px;">
                     Initialize Assistant
@@ -384,57 +390,15 @@
         let embeddings = [];
         let loadingProgress = 0;
         
-        // Common PDF files to look for in the folder
-        const commonPolicyFiles = [
-            // Standard patterns
-            'student-handbook.pdf',
-            'employee-handbook.pdf',
-            'academic-policies.pdf',
-            'campus-safety.pdf',
-            'technology-policies.pdf',
-            'facilities-policies.pdf',
-            'hr-policies.pdf',
-            'financial-policies.pdf',
-            'student-code-of-conduct.pdf',
-            'faculty-handbook.pdf',
-            'emergency-procedures.pdf',
-            'it-acceptable-use.pdf',
-            // Alternative patterns
-            'handbook.pdf',
-            'policies.pdf',
-            'student-policies.pdf',
-            'employee-policies.pdf',
-            'staff-policies.pdf',
-            'manual.pdf',
-            'guidelines.pdf',
-            'procedures.pdf',
-            'catalog.pdf',
-            'code-of-conduct.pdf',
-            // Chapter-based patterns (common in policy manuals)
+        // Your specific PDF files
+        const yourPolicyFiles = [
             'Chapter I - Board of Trustees.pdf',
-            'Chapter II - Administration.pdf',
-            'Chapter III - Students.pdf',
-            'Chapter IV - Academic Affairs.pdf',
-            'Chapter V - Student Affairs.pdf',
-            'Chapter VI - Business Affairs.pdf',
-            'Chapter VII - Human Resources.pdf',
-            'Chapter VIII - Facilities.pdf',
-            'Chapter 1 - Board of Trustees.pdf',
-            'Chapter 2 - Administration.pdf',
-            'Chapter 3 - Students.pdf',
-            'Chapter 4 - Academic Affairs.pdf',
-            'Chapter 5 - Student Affairs.pdf',
-            'Chapter 6 - Business Affairs.pdf',
-            'Chapter 7 - Human Resources.pdf',
-            'Chapter 8 - Facilities.pdf',
-            // Board policies patterns
-            'board-policies.pdf',
-            'board-of-trustees.pdf',
-            'governance.pdf',
-            'administrative-policies.pdf',
-            'student-policies.pdf',
-            'academic-regulations.pdf',
-            'personnel-policies.pdf'
+            'Chapter II - Organization.pdf', 
+            'Chapter III - Personnel.pdf',
+            'Chapter IV - Student Affairs.pdf',
+            'Chapter V - Educational Program.pdf',
+            'Chapter VI - Fiscal and Administrative Affairs.pdf',
+            'Chapter VII - Facilities.pdf'
         ];
 
         // Initialize PDF.js
@@ -442,43 +406,29 @@
 
         async function initializeBot() {
             const apiKey = document.getElementById('apiKey').value;
-            let pdfFolder = document.getElementById('pdfFolder').value;
-            const customFiles = document.getElementById('pdfFiles').value;
+            let baseUrl = document.getElementById('baseUrl').value;
 
             // Validation
-            if (!apiKey || !pdfFolder) {
-                alert('Please fill in Groq API key and PDF folder URL');
+            if (!apiKey || !baseUrl) {
+                alert('Please fill in Groq API key and base URL');
                 return;
             }
 
-            // Normalize PDF folder URL
-            if (!pdfFolder.endsWith('/')) {
-                pdfFolder += '/';
-            }
-            if (!pdfFolder.startsWith('http')) {
-                alert('PDF Folder URL must start with http:// or https://');
+            // Normalize base URL and construct PDF folder URL
+            if (!baseUrl.startsWith('http')) {
+                alert('Base URL must start with http:// or https://');
                 return;
             }
-
-            // Parse custom file list
-            let customFileList = [];
-            if (customFiles.trim()) {
-                customFileList = customFiles.split(',')
-                    .map(file => file.trim())
-                    .filter(file => file.length > 0)
-                    .filter(file => file.toLowerCase().endsWith('.pdf'));
-                
-                if (customFileList.length === 0) {
-                    alert('Please enter valid PDF filenames (must end with .pdf)');
-                    return;
-                }
-            }
+            
+            // Remove trailing slash if present, then add /pdf/
+            baseUrl = baseUrl.replace(/\/$/, '');
+            const pdfFolderUrl = baseUrl + '/pdf/';
 
             config = { 
-                provider: 'groq', // Always use Groq
+                provider: 'groq',
                 apiKey, 
-                pdfFolderUrl: pdfFolder, 
-                customFiles: customFileList,
+                pdfFolderUrl: pdfFolderUrl,
+                customFiles: yourPolicyFiles, // Use hardcoded file list
                 isInitialized: false 
             };
             
@@ -516,7 +466,7 @@
                 updateStatus('Ready', true);
                 
                 // Show success message
-                addMessage(`🎉 Successfully loaded ${documentChunks.length} document chunks from your policy files! I'm ready to answer questions using Groq's Llama models.`, 'bot');
+                addMessage(`🎉 Successfully loaded ${documentChunks.length} document chunks from all 7 policy chapters! I'm ready to answer questions using Groq's Llama models.`, 'bot');
                 
                 // Focus on input
                 document.getElementById('messageInput').focus();
@@ -532,9 +482,9 @@
                 if (error.message.includes('API')) {
                     errorMessage += 'Please check your Groq API key and try again.';
                 } else if (error.message.includes('PDF folder')) {
-                    errorMessage += 'Please check your PDF folder URL and ensure it\'s accessible.';
+                    errorMessage += 'Please check your base URL and ensure GitHub Pages is deployed.';
                 } else if (error.message.includes('No PDF files')) {
-                    errorMessage += 'No PDF files were found. Please check your configuration.';
+                    errorMessage += 'Could not access the PDF files. Please check your base URL.';
                 } else {
                     errorMessage += `Error: ${error.message}`;
                 }

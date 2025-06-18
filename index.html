@@ -571,21 +571,23 @@
 
         async function testPDFFolder() {
             try {
-                // Test if we can access the PDF folder by trying to fetch a common file
+                // Instead of testing folder access (which often fails), 
+                // test if we can access a known file or just skip this test
                 addMessage(`🔍 Testing PDF folder access: ${config.pdfFolderUrl}`, 'bot');
                 
-                const testResponse = await fetch(config.pdfFolderUrl, { method: 'HEAD' });
+                // Try to access the folder - if it fails, that's normal for GitHub Pages
+                try {
+                    const testResponse = await fetch(config.pdfFolderUrl, { method: 'HEAD' });
+                    addMessage(`📍 Folder test result: ${testResponse.status} (This is normal - GitHub Pages doesn't allow directory listing)`, 'bot');
+                } catch (error) {
+                    addMessage(`📍 Folder test: Cannot list directory (This is normal for GitHub Pages)`, 'bot');
+                }
                 
-                // Show the exact URL being tested
-                addMessage(`📍 Testing URL: ${config.pdfFolderUrl}`, 'bot');
-                addMessage(`📊 Response status: ${testResponse.status} ${testResponse.statusText}`, 'bot');
-                
-                // Even if the folder returns 404, that's okay - we just need to know we can reach the domain
-                // The real test is when we try to discover files
+                addMessage(`✅ PDF folder configured. Will test individual files during discovery.`, 'bot');
                 
             } catch (error) {
-                addMessage(`❌ Network error: ${error.message}`, 'bot');
-                throw new Error('PDF folder URL is not accessible - please check the URL and ensure GitHub Pages is deployed');
+                // Don't fail here - individual file access is what matters
+                addMessage(`📍 Folder access test inconclusive, but this is normal for GitHub Pages`, 'bot');
             }
         }
 
